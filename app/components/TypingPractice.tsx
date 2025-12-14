@@ -26,6 +26,8 @@ export default function TypingPractice() {
   const [totalKeystrokes, setTotalKeystrokes] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const [completedCount, setCompletedCount] = useState(0);
+  const [sessionErrors, setSessionErrors] = useState(0);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(true);
 
   // カテゴリ変更時にランダムテキストを生成
   useEffect(() => {
@@ -148,6 +150,7 @@ export default function TypingPractice() {
         }
       } else {
         setErrors((prev) => prev + 1);
+        setSessionErrors((prev) => prev + 1);
       }
     },
     [
@@ -182,6 +185,7 @@ export default function TypingPractice() {
   const resetAll = () => {
     setCompletedCount(0);
     setCurrentTextIndex(0);
+    setSessionErrors(0);
     resetPractice();
   };
 
@@ -196,6 +200,65 @@ export default function TypingPractice() {
       setTargetLayout(value);
     }
     resetPractice();
+  };
+
+  const handleJsonImport = (type: 'physical' | 'target', file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const json = JSON.parse(e.target?.result as string);
+
+        // Validate JSON structure
+        if (!json.name || !json.rows || !Array.isArray(json.rows)) {
+          alert('無効なJSON形式です。name と rows プロパティが必要です。');
+          return;
+        }
+
+        // Add the custom layout to LAYOUTS
+        const customKey = `custom_${type}_${Date.now()}`;
+        LAYOUTS[customKey] = json;
+
+        // Select the newly imported layout
+        if (type === 'physical') {
+          setPhysicalLayout(customKey);
+        } else {
+          setTargetLayout(customKey);
+        }
+
+        resetPractice();
+      } catch (error) {
+        alert('JSONファイルの読み込みに失敗しました。');
+        console.error(error);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const triggerFileInput = (type: 'physical' | 'target') => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        handleJsonImport(type, file);
+      }
+    };
+    input.click();
+  };
+
+  const downloadQwertyJson = () => {
+    const qwertyLayout = LAYOUTS.qwerty;
+    const json = JSON.stringify(qwertyLayout, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'qwerty-layout.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const getKeyStyle = (key: string, rowIndex: number, keyIndex: number) => {
@@ -223,6 +286,13 @@ export default function TypingPractice() {
   // 全問完了の判定
   const isAllComplete = completedCount === practiceTexts.length && practiceTexts.length > 0;
 
+  // KPM計算（Keys Per Minute）
+  const kpm = useMemo(() => {
+    if (!startTime || totalKeystrokes === 0) return 0;
+    const elapsedMinutes = (Date.now() - startTime) / 60000;
+    return Math.round(totalKeystrokes / elapsedMinutes);
+  }, [startTime, totalKeystrokes]);
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-4xl mx-auto">
@@ -235,18 +305,26 @@ export default function TypingPractice() {
           <div className="flex gap-6 justify-center items-end flex-wrap">
             <div>
               <label className="block text-sm font-semibold text-gray-900 mb-2">
-                物理キーボード配列
+                現在の配列
               </label>
               <select
                 value={physicalLayout}
-                onChange={(e) => handleLayoutChange('physical', e.target.value)}
-                className="border-2 border-gray-300 rounded px-3 py-2 w-40 text-gray-900 font-medium"
+                onChange={(e) => {
+                  if (e.target.value === '__import__') {
+                    triggerFileInput('physical');
+                    e.target.value = physicalLayout; // Reset to current value
+                  } else {
+                    handleLayoutChange('physical', e.target.value);
+                  }
+                }}
+                className="border-2 border-gray-300 rounded px-3 py-2 w-40 text-gray-900 font-medium h-[42px]"
               >
                 {Object.entries(LAYOUTS).map(([key, layout]) => (
                   <option key={key} value={key}>
                     {layout.name}
                   </option>
                 ))}
+                <option value="__import__">JSON形式で読み込み...</option>
               </select>
             </div>
             <div className="flex items-end pb-2">
@@ -258,15 +336,37 @@ export default function TypingPractice() {
               </label>
               <select
                 value={targetLayout}
-                onChange={(e) => handleLayoutChange('target', e.target.value)}
-                className="border-2 border-gray-300 rounded px-3 py-2 w-40 text-gray-900 font-medium"
+                onChange={(e) => {
+                  if (e.target.value === '__import__') {
+                    triggerFileInput('target');
+                    e.target.value = targetLayout; // Reset to current value
+                  } else {
+                    handleLayoutChange('target', e.target.value);
+                  }
+                }}
+                className="border-2 border-gray-300 rounded px-3 py-2 w-40 text-gray-900 font-medium h-[42px]"
               >
                 {Object.entries(LAYOUTS).map(([key, layout]) => (
                   <option key={key} value={key}>
                     {layout.name}
                   </option>
                 ))}
+                <option value="__import__">JSON形式で読み込み...</option>
               </select>
+            </div>
+            <div className="flex items-end pb-2">
+              <span className="text-2xl text-gray-400">|</span>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                サンプルJSON
+              </label>
+              <button
+                onClick={downloadQwertyJson}
+                className="border-2 border-blue-500 bg-blue-500 text-white rounded px-3 py-2 w-40 font-medium hover:bg-blue-600 hover:border-blue-600 transition h-[42px]"
+              >
+                ダウンロード
+              </button>
             </div>
             <div className="flex items-end pb-2">
               <span className="text-2xl text-gray-400">|</span>
@@ -278,7 +378,7 @@ export default function TypingPractice() {
               <select
                 value={selectedCategory}
                 onChange={(e) => handleCategoryChange(e.target.value)}
-                className="border-2 border-gray-300 rounded px-3 py-2 w-40 text-gray-900 font-medium"
+                className="border-2 border-gray-300 rounded px-3 py-2 w-40 text-gray-900 font-medium h-[42px]"
               >
                 {Object.entries(TEXT_CATEGORIES).map(([key, category]) => (
                   <option key={key} value={key}>
@@ -286,18 +386,6 @@ export default function TypingPractice() {
                   </option>
                 ))}
               </select>
-            </div>
-          </div>
-        </div>
-
-        {/* 進捗表示 */}
-        <div className="bg-white rounded-lg shadow p-4 mb-6">
-          <div className="flex justify-between items-center">
-            <div className="text-lg font-semibold text-gray-900">
-              問題 {completedCount + 1} / {practiceTexts.length}
-            </div>
-            <div className="text-base text-gray-700 font-medium">
-              カテゴリ: {TEXT_CATEGORIES[selectedCategory].name}
             </div>
           </div>
         </div>
@@ -318,6 +406,16 @@ export default function TypingPractice() {
           <>
             {/* 練習テキスト表示 */}
             <div className="bg-white rounded-lg shadow p-6 mb-6">
+              {/* 進捗表示 - 問題文の上部に配置 */}
+              <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-200">
+                <div className="text-lg font-semibold text-gray-900">
+                  問題 {completedCount + 1} / {practiceTexts.length}
+                </div>
+                <div className="text-base text-gray-700 font-medium">
+                  カテゴリ: {TEXT_CATEGORIES[selectedCategory].name}
+                </div>
+              </div>
+
               <div className="text-xl mb-3 text-gray-900 font-medium">{currentText.display}</div>
               <div className="text-base mb-4 text-gray-600">({currentText.reading})</div>
 
@@ -332,44 +430,46 @@ export default function TypingPractice() {
               </div>
 
               {/* 統計 */}
-              <div className="flex gap-6 text-base text-gray-800 font-medium">
+              <div className="flex gap-6 text-base text-gray-800 font-medium flex-wrap">
                 <div>
                   進捗: {completedLength}/{displayRomaji.length}
                 </div>
                 <div>エラー: {errors}</div>
+                <div>セッションエラー: {sessionErrors}</div>
+                <div>KPM: {kpm}</div>
                 {isComplete && <div className="text-green-600 font-bold">完了！次へ...</div>}
               </div>
             </div>
 
             {/* キーボード表示（練習配列） */}
             <div className="bg-white rounded-lg shadow p-6 mb-6">
-              <div className="text-base text-gray-700 mb-3 text-center font-medium">
-                {LAYOUTS[targetLayout].name} 配列（青いキーを押してください）
-              </div>
-              <div className="flex flex-col items-center gap-1">
-                {LAYOUTS[targetLayout].rows.map((row, rowIndex) => (
-                  <div key={rowIndex} className="flex" style={{ marginLeft: rowIndex * 16 }}>
-                    {row.map((key, keyIndex) => (
-                      <div key={keyIndex} className={getKeyStyle(key, rowIndex, keyIndex)}>
-                        {key.toUpperCase()}
-                      </div>
-                    ))}
-                  </div>
-                ))}
-                <div className="flex mt-1">
-                  <div className="w-64 h-10 bg-gray-100 border border-gray-300 rounded flex items-center justify-center text-sm text-gray-600 font-medium">
-                    Space
-                  </div>
+              <div className="flex justify-between items-center mb-3">
+                <div className="text-base text-gray-700 font-medium flex-1 text-center">
+                  {LAYOUTS[targetLayout].name}（青いキーを押してください）
                 </div>
+                <button
+                  onClick={() => setIsKeyboardVisible(!isKeyboardVisible)}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition font-medium text-sm"
+                >
+                  {isKeyboardVisible ? 'キーボードを隠す' : 'キーボードを表示'}
+                </button>
               </div>
-
-              {nextPhysicalKey && nextPhysicalKey !== nextTargetKey && (
-                <div className="text-center mt-4 text-base text-gray-700 font-medium">
-                  物理キーボードでは「
-                  <span className="font-bold text-blue-600 text-lg">
-                    {nextPhysicalKey.toUpperCase()}
-                  </span>
-                  」を押してください
+              {isKeyboardVisible && (
+                <div className="flex flex-col items-center gap-1">
+                  {LAYOUTS[targetLayout].rows.map((row, rowIndex) => (
+                    <div key={rowIndex} className="flex" style={{ marginLeft: rowIndex * 16 }}>
+                      {row.map((key, keyIndex) => (
+                        <div key={keyIndex} className={getKeyStyle(key, rowIndex, keyIndex)}>
+                          {key.toUpperCase()}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  <div className="flex mt-1">
+                    <div className="w-64 h-10 bg-gray-100 border border-gray-300 rounded flex items-center justify-center text-sm text-gray-600 font-medium">
+                      Space
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
