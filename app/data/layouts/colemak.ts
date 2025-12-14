@@ -1,7 +1,7 @@
 import { Layout } from './index';
 
 export const colemak: Layout = {
-  name: 'Colemak',
+  name: 'Colemak配列',
   rows: [
     ['q', 'w', 'f', 'p', 'g', 'j', 'l', 'u', 'y', ';'],
     ['a', 'r', 's', 't', 'd', 'h', 'n', 'e', 'i', 'o'],
