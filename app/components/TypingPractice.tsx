@@ -28,6 +28,8 @@ export default function TypingPractice() {
   const [completedCount, setCompletedCount] = useState(0);
   const [sessionErrors, setSessionErrors] = useState(0);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(true);
+  const [sessionStartTime, setSessionStartTime] = useState<number | null>(null);
+  const [sessionTotalKeystrokes, setSessionTotalKeystrokes] = useState(0);
 
   // カテゴリ変更時にランダムテキストを生成
   useEffect(() => {
@@ -118,7 +120,12 @@ export default function TypingPractice() {
         setStartTime(Date.now());
       }
 
+      if (!sessionStartTime) {
+        setSessionStartTime(Date.now());
+      }
+
       setTotalKeystrokes((prev) => prev + 1);
+      setSessionTotalKeystrokes((prev) => prev + 1);
 
       // 入力処理
       const result = processInput(romajiNodes, currentNodeIndex, logicalKey);
@@ -186,6 +193,8 @@ export default function TypingPractice() {
     setCompletedCount(0);
     setCurrentTextIndex(0);
     setSessionErrors(0);
+    setSessionStartTime(null);
+    setSessionTotalKeystrokes(0);
     resetPractice();
   };
 
@@ -286,12 +295,20 @@ export default function TypingPractice() {
   // 全問完了の判定
   const isAllComplete = completedCount === practiceTexts.length && practiceTexts.length > 0;
 
-  // KPM計算（Keys Per Minute）
-  const kpm = useMemo(() => {
-    if (!startTime || totalKeystrokes === 0) return 0;
-    const elapsedMinutes = (Date.now() - startTime) / 60000;
-    return Math.round(totalKeystrokes / elapsedMinutes);
-  }, [startTime, totalKeystrokes]);
+  // KPM計算（Keys Per Minute） - セッション全体
+  const sessionKpm = useMemo(() => {
+    if (!sessionStartTime || sessionTotalKeystrokes === 0) return 0;
+    const elapsedMinutes = (Date.now() - sessionStartTime) / 60000;
+    if (elapsedMinutes === 0) return 0;
+    return Math.round(sessionTotalKeystrokes / elapsedMinutes);
+  }, [sessionStartTime, sessionTotalKeystrokes]);
+
+  // 正確性（accuracy）の計算
+  const accuracy = useMemo(() => {
+    if (sessionTotalKeystrokes === 0) return 100;
+    const correctKeystrokes = sessionTotalKeystrokes - sessionErrors;
+    return Math.round((correctKeystrokes / sessionTotalKeystrokes) * 100);
+  }, [sessionTotalKeystrokes, sessionErrors]);
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -392,15 +409,51 @@ export default function TypingPractice() {
 
         {isAllComplete ? (
           // 全問完了画面
-          <div className="bg-white rounded-lg shadow p-8 mb-6 text-center">
-            <h2 className="text-3xl font-bold text-green-600 mb-4">おめでとうございます！</h2>
-            <p className="text-xl text-gray-800 mb-6">全ての問題を完了しました！</p>
-            <button
-              onClick={resetAll}
-              className="px-8 py-3 bg-blue-500 text-white text-lg font-semibold rounded-lg hover:bg-blue-600 transition"
-            >
-              もう一度練習する
-            </button>
+          <div className="bg-white rounded-lg shadow p-8 mb-6">
+            <h2 className="text-3xl font-bold text-green-600 mb-6 text-center">おめでとうございます！</h2>
+            <p className="text-xl text-gray-800 mb-8 text-center">全ての問題を完了しました！</p>
+
+            {/* 結果表示 */}
+            <div className="bg-gray-50 rounded-lg p-6 mb-8">
+              <h3 className="text-xl font-bold text-gray-900 mb-4 text-center">セッション結果</h3>
+              <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
+                <div className="bg-white p-4 rounded-lg shadow-sm">
+                  <div className="text-sm text-gray-600 mb-1">完了問題数</div>
+                  <div className="text-2xl font-bold text-gray-900">{completedCount}</div>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-sm">
+                  <div className="text-sm text-gray-600 mb-1">合計打鍵数</div>
+                  <div className="text-2xl font-bold text-gray-900">{sessionTotalKeystrokes}</div>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-sm">
+                  <div className="text-sm text-gray-600 mb-1">KPM</div>
+                  <div className="text-2xl font-bold text-blue-600">{sessionKpm}</div>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-sm">
+                  <div className="text-sm text-gray-600 mb-1">正確性</div>
+                  <div className="text-2xl font-bold text-green-600">{accuracy}%</div>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-sm">
+                  <div className="text-sm text-gray-600 mb-1">合計エラー</div>
+                  <div className="text-2xl font-bold text-red-600">{sessionErrors}</div>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow-sm">
+                  <div className="text-sm text-gray-600 mb-1">練習時間</div>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {sessionStartTime ? Math.floor((Date.now() - sessionStartTime) / 1000) : 0}秒
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="text-center">
+              <button
+                onClick={resetAll}
+                className="px-8 py-3 bg-blue-500 text-white text-lg font-semibold rounded-lg hover:bg-blue-600 transition"
+              >
+                もう一度練習する
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -434,9 +487,10 @@ export default function TypingPractice() {
                 <div>
                   進捗: {completedLength}/{displayRomaji.length}
                 </div>
-                <div>エラー: {errors}</div>
-                <div>セッションエラー: {sessionErrors}</div>
-                <div>KPM: {kpm}</div>
+                <div>現在のエラー: {errors}</div>
+                <div>合計エラー: {sessionErrors}</div>
+                <div>KPM: {sessionKpm}</div>
+                <div>正確性: {accuracy}%</div>
                 {isComplete && <div className="text-green-600 font-bold">完了！次へ...</div>}
               </div>
             </div>
